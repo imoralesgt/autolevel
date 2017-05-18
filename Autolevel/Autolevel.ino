@@ -154,6 +154,63 @@ void dmpDataReady() {
 
 
 
+
+
+
+
+
+
+
+// ================================================================
+// ===                     PID DEFINITION                       ===
+// ================================================================
+float Kp, Ki, Kd, minInt, maxInt;
+float setPoint;
+float derivator, integrator;
+float error;
+
+void pidInit(float p, float i, float d, float minI, float maxI){
+   Kp = p; Ki = i; Kd = d; //Coeficientes del controlador PID
+   minInt = minI; maxInt = maxI; //Limites del integrador
+   
+   derivator = 0; integrator = 0; //Condiciones iniciales
+   error = 0; //Condiciones iniciales
+}
+
+void pidSetPoint(float set){
+  setPoint = set; //Establecer valor deseado
+  derivator = 0; //Inicializar condiciones iniciales
+  integrator = 0; //Eliminar todo error acumulado al reiniciar
+}
+
+float pidUpdate(float currentValue){
+  float pValue, iValue, dValue, PID;
+  error = setPoint - currentValue; 
+
+  //Parte proporcional del controlador
+  pValue = Kp*error;
+  
+  //Integral discreta
+  integrator = integrator + error;
+  if (integrator > maxInt){
+    integrator = maxInt;
+  }else if(integrator < minInt){
+    integrator = minInt;
+  }
+  //Parte integral del controlador
+  iValue = integrator*Ki;
+  
+  
+  //Derivada discreta
+  dValue = Kd*(error - derivator);
+  derivator = error; //Diferencia del valor anterior con el valor actual
+  
+  PID = pValue + iValue + dValue;
+  
+  return PID;
+}
+
+
 // ================================================================
 // ===                      INITIAL SETUP                       ===
 // ================================================================
@@ -204,10 +261,10 @@ void setup() {
     devStatus = mpu.dmpInitialize();
 
     // supply your own gyro offsets here, scaled for min sensitivity
-    mpu.setXGyroOffset(220);
-    mpu.setYGyroOffset(76);
-    mpu.setZGyroOffset(-85);
-    mpu.setZAccelOffset(1788); // 1688 factory default for my test chip
+    mpu.setXGyroOffset(-92);
+    mpu.setYGyroOffset(-78);
+    mpu.setZGyroOffset(45);
+    mpu.setZAccelOffset(1450); // 1688 factory default for my test chip
 
     // make sure it worked (returns 0 if so)
     if (devStatus == 0) {
@@ -240,6 +297,11 @@ void setup() {
     pinMode(LED_PIN, OUTPUT);
 
     myServo.attach(9);
+
+    //PID Initialization
+    pidInit(2.0, 1.5, 0.5, -10, +10);
+    pidSetPoint(30.0); //Angulo 0
+   
 }
 
 
@@ -249,7 +311,7 @@ void setup() {
 // ================================================================
 
 
-int16_t servoPosition = 0;
+float servoPosition = 0;
 float roll = 0.0;
 
 void loop() {
@@ -295,114 +357,46 @@ void loop() {
         // (this lets us immediately read more without waiting for an interrupt)
         fifoCount -= packetSize;
 
-        #ifdef OUTPUT_READABLE_QUATERNION
-            // display quaternion values in easy matrix form: w x y z
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            Serial.print("quat\t");
-            Serial.print(q.w);
-            Serial.print("\t");
-            Serial.print(q.x);
-            Serial.print("\t");
-            Serial.print(q.y);
-            Serial.print("\t");
-            Serial.println(q.z);
-        #endif
-
-        #ifdef OUTPUT_READABLE_EULER
-            // display Euler angles in degrees
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetEuler(euler, &q);
-            Serial.print("euler\t");
-            Serial.print(euler[0] * 180/M_PI);
-            Serial.print("\t");
-            Serial.print(euler[1] * 180/M_PI);
-            Serial.print("\t");
-            Serial.println(euler[2] * 180/M_PI);
-        #endif
-
-        #ifdef OUTPUT_READABLE_YAWPITCHROLL
-            // display Euler angles in degrees
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetGravity(&gravity, &q);
-            mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            Serial.print("ypr\t");
-            Serial.print(ypr[0] * 180/M_PI);
-            Serial.print("\t");
-            Serial.print(ypr[1] * 180/M_PI);
-            Serial.print("\t");
-            Serial.println(ypr[2] * 180/M_PI);
-        #endif
-
-        #ifdef OUTPUT_READABLE_REALACCEL
-            // display real acceleration, adjusted to remove gravity
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetAccel(&aa, fifoBuffer);
-            mpu.dmpGetGravity(&gravity, &q);
-            mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-            Serial.print("areal\t");
-            Serial.print(aaReal.x);
-            Serial.print("\t");
-            Serial.print(aaReal.y);
-            Serial.print("\t");
-            Serial.println(aaReal.z);
-        #endif
-
-        #ifdef OUTPUT_READABLE_WORLDACCEL
-            // display initial world-frame acceleration, adjusted to remove gravity
-            // and rotated based on known orientation from quaternion
-            mpu.dmpGetQuaternion(&q, fifoBuffer);
-            mpu.dmpGetAccel(&aa, fifoBuffer);
-            mpu.dmpGetGravity(&gravity, &q);
-            mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-            mpu.dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
-            Serial.print("aworld\t");
-            Serial.print(aaWorld.x);
-            Serial.print("\t");
-            Serial.print(aaWorld.y);
-            Serial.print("\t");
-            Serial.println(aaWorld.z);
-        #endif
-    
-        #ifdef OUTPUT_TEAPOT
-            // display quaternion values in InvenSense Teapot demo format:
-            teapotPacket[2] = fifoBuffer[0];
-            teapotPacket[3] = fifoBuffer[1];
-            teapotPacket[4] = fifoBuffer[4];
-            teapotPacket[5] = fifoBuffer[5];
-            teapotPacket[6] = fifoBuffer[8];
-            teapotPacket[7] = fifoBuffer[9];
-            teapotPacket[8] = fifoBuffer[12];
-            teapotPacket[9] = fifoBuffer[13];
-            Serial.write(teapotPacket, 14);
-            teapotPacket[11]++; // packetCount, loops at 0xFF on purpose
-        #endif
-
         myServo.write(servoPosition);
 
-        unsigned int i;
-        roll = 0;
-        for(i = 1; i > 0; i--){
-          mpu.dmpGetQuaternion(&q, fifoBuffer);
-          mpu.dmpGetGravity(&gravity, &q);
-          mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);  
-          roll += ypr[2] * 180 / M_PI;
+        mpu.dmpGetQuaternion(&q, fifoBuffer);
+        mpu.dmpGetGravity(&gravity, &q);
+        mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);  
+        roll = ypr[2] * 180.0 / M_PI;
+
+
+        //servoPosition += pidUpdate(roll);
+
+        float sp = 75;
+        float delta = 0.5;
+        float sens = 0.02;
+
+        if(roll > sp + delta){
+          if(servoPosition > -180){
+            servoPosition -= sens*abs(roll - sp);
+          }
+        }else if(roll < sp - delta){
+          if(servoPosition < 180){
+            servoPosition +=  sens*abs(roll - sp);
+          }
         }
-        roll /= 1.0;
+        
 
         
 /*
         Serial.print("Servo Position: ");
         Serial.print(servoPosition);
-        Serial.print("º  ---   Roll: ");
+        Serial.print("º  ---   Roll: "); */
         Serial.print(roll);
-        Serial.println("º");
-*/
+        Serial.print(", ");
+        Serial.println(servoPosition);
 
         //Serial.println(roll);
 
-        
-        
 
+        
+        
+/*
         if(roll > 0){
           if(servoPosition > -180){
             servoPosition -= 1;
@@ -412,7 +406,7 @@ void loop() {
             servoPosition +=  1;
           }
         }
-
+*/
         // blink LED to indicate activity
         blinkState = !blinkState;
         digitalWrite(LED_PIN, blinkState);
