@@ -300,7 +300,7 @@ void setup() {
 
     //PID Initialization
     pidInit(2.0, 1.5, 0.5, -10, +10);
-    pidSetPoint(30.0); //Angulo 0
+    pidSetPoint(0.0); //Angulo 0
    
 }
 
@@ -367,7 +367,7 @@ void loop() {
 
         //servoPosition += pidUpdate(roll);
 
-        float sp = 75;
+        float sp = 0;
         float delta = 0.5;
         float sens = 0.02;
 
